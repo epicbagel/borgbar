@@ -50,11 +50,15 @@ Panel {
     id: button
     bar: root.bar
     anchors.centerIn: parent
+    // The neighbouring command modules set horizontalMargin 14; WidgetButton
+    // defaults to 8.5, which made these two sit tighter to their neighbours
+    // than everything else on the bar.
+    horizontalMargin: 14
     text: {
       if (!root.showAge || !root.borg || !root.borg.known) return root.glyph
-      if (root.borg.running) return root.glyph + "  …"
+      if (root.borg.running) return root.glyph + " …"
       var a = root.borg.relative(root.borg.ageSeconds)
-      return a === "" ? root.glyph : root.glyph + "  " + a
+      return a === "" ? root.glyph : root.glyph + " " + a
     }
     tooltipText: root.headline
     foreground: root.stateColor

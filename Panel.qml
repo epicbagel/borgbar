@@ -35,7 +35,10 @@ Panel {
 
   readonly property string headline: {
     if (!borg) return "No backup service"
-    if (borg.running) return "Backing up now"
+    if (borg.running) {
+      var p = borg.progressLabel()
+      return p === "" ? "Backing up now" : "Backing up now · " + p + " (est.)"
+    }
     if (borg.failed) return "Last backup failed"
     if (!borg.known) return "No backup recorded"
     var age = borg.relative(borg.ageSeconds)
@@ -56,7 +59,10 @@ Panel {
     horizontalMargin: 14
     text: {
       if (!root.showAge || !root.borg || !root.borg.known) return root.glyph
-      if (root.borg.running) return root.glyph + " …"
+      if (root.borg.running) {
+        var p = root.borg.progressLabel()
+        return p === "" ? root.glyph + " …" : root.glyph + " " + p
+      }
       var a = root.borg.relative(root.borg.ageSeconds)
       return a === "" ? root.glyph : root.glyph + " " + a
     }
@@ -102,6 +108,16 @@ Panel {
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
+      }
+
+      Text {
+        width: parent.width
+        visible: !!root.borg && root.borg.running && root.borg.progressDetail() !== ""
+        text: root.borg ? root.borg.progressDetail() : ""
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        wrapMode: Text.WordWrap
       }
 
       PanelSeparator { width: parent.width }

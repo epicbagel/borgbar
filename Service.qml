@@ -30,6 +30,9 @@ Item {
   property real ageSeconds: -1
   property int staleHours: 24
   property var archive: ({})
+  // Always an estimate — see progress_json in bin/borgbar for why borg
+  // cannot give a real one.
+  property var progress: ({})
   property bool refreshing: false
 
   readonly property bool ok: state === "ok"
@@ -71,6 +74,32 @@ Item {
     return s > 0 ? relative(s) : "due"
   }
 
+  function humanBytes(bytes) {
+    var b = Number(bytes || 0)
+    if (!isFinite(b) || b <= 0) return ""
+    var units = ["B", "KB", "MB", "GB", "TB"]
+    var i = 0
+    while (b >= 1024 && i < units.length - 1) { b /= 1024; i++ }
+    return (i === 0 ? Math.round(b) : b.toFixed(1)) + units[i]
+  }
+
+  // The tilde is doing real work: this is a guess against a cached denominator,
+  // and it should never read as though borg reported it.
+  function progressLabel() {
+    var p = progress || ({})
+    if (p.percent === null || p.percent === undefined) return ""
+    return "~" + p.percent + "%"
+  }
+
+  function progressDetail() {
+    var p = progress || ({})
+    if (!p.addedBytes) return ""
+    var added = humanBytes(p.addedBytes) + " added"
+    if (p.percent === null || p.percent === undefined)
+      return added + " · run Check repo for an estimate"
+    return added + " of ~" + humanBytes(p.deltaBytes) + " · estimated"
+  }
+
   function clockOf(epoch) {
     if (!epoch) return ""
     return new Date(epoch * 1000).toLocaleString(Qt.locale(), "ddd d MMM HH:mm")
@@ -109,6 +138,7 @@ Item {
         root.ageSeconds = Number(s.ageSeconds)
         root.staleHours = Number(s.staleHours) || 24
         root.archive = s.archive || ({})
+        root.progress = s.progress || ({})
       }
     }
   }

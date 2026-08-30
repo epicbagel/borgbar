@@ -144,11 +144,14 @@ cmd_status() {
   local prog='{}'
   [[ $running == true ]] && prog=$(progress_json)
 
-  jq -cn --arg state "$state" --arg result "$result" --arg timer "$active" \
+  local installed=false
+  have borgmatic && installed=true
+
+  jq -cn --argjson installed "$installed" --arg state "$state" --arg result "$result" --arg timer "$active" \
     --argjson running "$running" --argjson last "$reference" --argjson next "$next" \
     --argjson age "$age" --argjson exitcode "$exitcode" --argjson stale "$STALE_HOURS" \
     --argjson archive "$arch" --argjson progress "$prog" \
-    '{state:$state, running:$running, result:$result, exitCode:$exitcode,
+    '{installed:$installed, state:$state, running:$running, result:$result, exitCode:$exitcode,
       timer:$timer, lastRun:$last, nextRun:$next, ageSeconds:$age,
       staleHours:$stale, archive:$archive, progress:$progress}'
 }

@@ -45,8 +45,9 @@ Panel {
     return borg.stale ? ("Last backup " + age + " ago") : ("Backed up " + age + " ago")
   }
 
-  visible: true
-  implicitWidth: button.implicitWidth
+  // Nothing to say on a machine without borgmatic, so take up no room.
+  visible: !borg || borg.installed
+  implicitWidth: visible ? button.implicitWidth : 0
   implicitHeight: bar ? bar.barSize : Style.space(26)
 
   WidgetButton {

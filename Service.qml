@@ -21,6 +21,9 @@ Item {
   readonly property string bin: sourceDir ? sourceDir + "/bin/borgbar" : ""
 
   // ------------------------------------------------------------------- state
+  // Whether borgmatic exists at all. A machine that does not back up with
+  // borg should show nothing, not an empty widget waiting for news.
+  property bool installed: true
   property string state: "unknown"      // ok | running | failed | stale | unknown
   property bool running: false
   property string result: ""
@@ -129,6 +132,7 @@ Item {
         var s
         try { s = JSON.parse(this.text) } catch (e) { return }
         if (!s || typeof s !== "object") return
+        root.installed = s.installed !== false
         root.state = String(s.state || "unknown")
         root.running = s.running === true
         root.result = String(s.result || "")

@@ -73,18 +73,6 @@ Item {
 
   function backUpNow() { run(["run"]) }
 
-  // The slow one: goes to the repository. Runs as a tracked process so the
-  // panel can show that it is working rather than appearing to do nothing.
-  // Worst state across the repositories, for the panel's summary line. The bar
-  // itself keeps taking its colour from systemd — see cmd_status for why.
-  readonly property int reposBehind: {
-    var n = 0
-    var list = repos || []
-    for (var i = 0; i < list.length; i++)
-      if (list[i].error || !list[i].at) n++
-    return n
-  }
-
   // Where a repository sits in this run. borgmatic works through them in config
   // order, so anything after the live one is still to come — worth saying,
   // because a destination showing only an old date reads as abandoned when it

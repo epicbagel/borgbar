@@ -37,6 +37,9 @@ Item {
   // going quiet looks different from never having configured it.
   property var repos: []
   property real checkedAt: 0
+  // Which repository the run is writing to right now. Comes from the running
+  // process, so it tracks the run moving from one repository to the next.
+  property string activeRepo: ""
   // Always an estimate — see progress_json in bin/borgbar for why borg
   // cannot give a real one.
   property var progress: ({})
@@ -68,11 +71,18 @@ Item {
     return n
   }
 
-  readonly property int reposBusy: {
-    var n = 0
-    var list = repos || []
-    for (var i = 0; i < list.length; i++) if (list[i].busy) n++
-    return n
+  function syncingNow(label) {
+    return running && label !== "" && label === activeRepo
+  }
+
+  // Whole-job progress, not "new since last time": during a first seed there is
+  // no previous archive to measure against, and that is exactly when someone is
+  // watching. Capped, because the same source goes to each repository in turn.
+  function percentOf(label) {
+    if (!syncingNow(label)) return -1
+    var p = progress || ({})
+    if (!p.addedBytes || !p.sourceBytes) return -1
+    return Math.min(100, Math.floor(100 * p.addedBytes / p.sourceBytes))
   }
 
   function refreshArchives() {
@@ -168,6 +178,7 @@ Item {
         root.staleHours = Number(s.staleHours) || 24
         root.repos = s.repos || []
         root.checkedAt = Number(s.checkedAt) || 0
+        root.activeRepo = String(s.activeRepo || "")
         root.progress = s.progress || ({})
       }
     }

@@ -95,6 +95,25 @@ configured_repos() {
   ' "$CONFIG_YAML" 2>/dev/null
 }
 
+# Which repository the running borg is writing to, by its borgmatic label.
+#
+# Read from the running process rather than from the cache: borgmatic works
+# through the repositories one at a time, so which one is live changes during a
+# run. The cache is only rewritten on demand, so a cached answer would name the
+# first repository for the whole run and keep naming it after the run moved on.
+active_repo() {
+  local cmd repo label path
+  cmd=$(pgrep -a -x borg 2>/dev/null | head -1)
+  [[ -z $cmd ]] && return
+  repo=$(grep -oE '[^ ]+::' <<<"$cmd" | head -1)
+  repo=${repo%::}
+  [[ -z $repo ]] && return
+  while IFS=$'\t' read -r label path; do
+    [[ $path == "$repo" ]] && { printf '%s' "$label"; return; }
+  done < <(configured_repos)
+  printf '%s' "$repo"
+}
+
 # How far through the current run borg is — an estimate, and labelled as one
 # everywhere it surfaces.
 #
@@ -187,13 +206,18 @@ cmd_status() {
   local installed=false
   have borgmatic && installed=true
 
+  local active=""
+  [[ $running == true ]] && active=$(active_repo)
+
   jq -cn --argjson installed "$installed" --arg state "$state" --arg result "$result" --arg timer "$active" \
     --argjson running "$running" --argjson last "$reference" --argjson next "$next" \
     --argjson age "$age" --argjson exitcode "$exitcode" --argjson stale "$STALE_HOURS" \
     --argjson repos "$repos" --argjson checked "$checked" --argjson progress "$prog" \
+    --arg active "$active" \
     '{installed:$installed, state:$state, running:$running, result:$result, exitCode:$exitcode,
       timer:$timer, lastRun:$last, nextRun:$next, ageSeconds:$age,
-      staleHours:$stale, repos:$repos, checkedAt:$checked, progress:$progress}'
+      staleHours:$stale, repos:$repos, checkedAt:$checked, progress:$progress,
+      activeRepo:$active}'
 }
 
 # The slow one. Never called from the poll loop.

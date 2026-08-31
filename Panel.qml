@@ -222,11 +222,15 @@ Panel {
       }
 
       Repeater {
-        model: root.borg && !root.borg.refreshing ? (root.borg.repos || []) : []
+        model: root.borg ? (root.borg.repos || []) : []
 
         Column {
+          id: repoRow
           width: column.width
           spacing: Style.space(2)
+
+          readonly property bool syncing: !!root.borg && root.borg.syncingNow(modelData.label || "")
+          readonly property int pct: root.borg ? root.borg.percentOf(modelData.label || "") : -1
 
           Row {
             width: parent.width
@@ -242,23 +246,18 @@ Panel {
               width: parent.width / 2
               horizontalAlignment: Text.AlignRight
               text: {
-                if (modelData.busy) {
-                  var p = root.borg.progress || ({})
-                  if (p.addedBytes && p.sourceBytes)
-                    return root.borg.humanBytes(p.addedBytes) + " / " + root.borg.humanBytes(p.sourceBytes)
-                  return "backing up…"
-                }
-                if (modelData.error) return "unreachable"
-                if (!modelData.at) return "no archives"
-                return root.borg.relative((Date.now() / 1000) - modelData.at) + " ago"
+                if (repoRow.syncing)
+                  return repoRow.pct >= 0 ? repoRow.pct + "%" : "syncing…"
+                if (modelData.error && !modelData.busy) return "unreachable"
+                if (!modelData.at) return "never synced"
+                return "last synced " + root.borg.relative((Date.now() / 1000) - modelData.at) + " ago"
               }
-              // Stale here means this destination is behind the others, not that
-              // the run failed — the schedule block above already reports that.
-              // Busy is the normal state of the repository a run is currently
-              // writing to, so it stays quiet. Only a real fault goes urgent.
+              // Syncing is the healthy state and stays quiet. Only a repository
+              // that has fallen behind or gone missing goes urgent.
               color: {
-                if (modelData.busy) return Color.accent
-                if (modelData.error || !modelData.at) return root.urgent
+                if (repoRow.syncing) return Color.accent
+                if (modelData.error && !modelData.busy) return root.urgent
+                if (!modelData.at) return root.urgent
                 var age = (Date.now() / 1000) - modelData.at
                 return age > root.borg.staleHours * 3600 ? root.urgent : root.dim
               }
@@ -269,8 +268,17 @@ Panel {
 
           Text {
             width: parent.width
-            visible: !!modelData.name
-            text: modelData.name || ""
+            horizontalAlignment: Text.AlignRight
+            visible: repoRow.syncing || !!modelData.name
+            text: {
+              if (repoRow.syncing) {
+                var p = root.borg.progress || ({})
+                if (p.addedBytes && p.sourceBytes)
+                  return root.borg.humanBytes(p.addedBytes) + " of " + root.borg.humanBytes(p.sourceBytes) + " synced"
+                return ""
+              }
+              return modelData.name || ""
+            }
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption

@@ -202,7 +202,7 @@ Panel {
       // which is precisely the thing worth seeing, and precisely what a single
       // "latest archive" line used to hide.
       PanelSectionHeader {
-        text: "REPOSITORIES"
+        text: "EACH RUN COPIES TO"
         foreground: root.foreground
         fontFamily: root.fontFamily
       }
@@ -230,6 +230,7 @@ Panel {
           spacing: Style.space(2)
 
           readonly property bool syncing: !!root.borg && root.borg.syncingNow(modelData.label || "")
+          readonly property bool queued: !!root.borg && root.borg.queuedNow(modelData.label || "")
           readonly property int pct: root.borg ? root.borg.percentOf(modelData.label || "") : -1
 
           Row {
@@ -248,6 +249,7 @@ Panel {
               text: {
                 if (repoRow.syncing)
                   return repoRow.pct >= 0 ? repoRow.pct + "%" : "syncing…"
+                if (repoRow.queued) return "queued next"
                 if (modelData.error && !modelData.busy) return "unreachable"
                 if (!modelData.at) return "never synced"
                 return "last synced " + root.borg.relative((Date.now() / 1000) - modelData.at) + " ago"
@@ -256,6 +258,7 @@ Panel {
               // that has fallen behind or gone missing goes urgent.
               color: {
                 if (repoRow.syncing) return Color.accent
+                if (repoRow.queued) return root.dim
                 if (modelData.error && !modelData.busy) return root.urgent
                 if (!modelData.at) return root.urgent
                 var age = (Date.now() / 1000) - modelData.at

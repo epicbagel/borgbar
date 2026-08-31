@@ -71,6 +71,21 @@ Item {
     return n
   }
 
+  // Where a repository sits in this run. borgmatic works through them in config
+  // order, so anything after the live one is still to come — worth saying,
+  // because a destination showing only an old date reads as abandoned when it
+  // is in fact next in line.
+  function queuedNow(label) {
+    if (!running || activeRepo === "") return false
+    var list = repos || []
+    var mine = -1, live = -1
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].label === label) mine = i
+      if (list[i].label === activeRepo) live = i
+    }
+    return mine > live && live >= 0
+  }
+
   function syncingNow(label) {
     return running && label !== "" && label === activeRepo
   }

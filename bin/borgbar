@@ -221,16 +221,23 @@ cmd_refresh() {
   while IFS=$'\t' read -r label path; do
     [[ -z $label ]] && continue
 
+    # Several, not one, so checkpoints can be skipped.
+    #
+    # borg writes a .checkpoint archive periodically through a long run so an
+    # interrupted backup does not lose everything. It is a partial: asking for
+    # the last archive after a run died hands back the checkpoint, and reporting
+    # that as the last backup dates the repository to the failure rather than to
+    # the last time it actually completed. That reads as more recent than the
+    # truth, which is the wrong direction for this widget to ever be wrong in.
     local err; err=$(mktemp)
-    info=$(timeout 120 borgmatic info --repository "$label" --last 1 --json 2>"$err") || true
+    info=$(timeout 120 borgmatic info --repository "$label" --last 5 --json 2>"$err") || true
     name=""; start=""; osize=0; nfiles=0
     if [[ -n $info ]]; then
-      IFS=$'\t' read -r name start osize nfiles < <(jq -r '(.[0] // {}) | [
-          ((.archives[0].name) // ""),
-          ((.archives[0].start) // ""),
-          ((.archives[0].stats.original_size) // 0),
-          ((.archives[0].stats.nfiles) // 0)
-        ] | @tsv' <<<"$info" 2>/dev/null) || true
+      IFS=$'\t' read -r name start osize nfiles < <(jq -r '
+          [ (.[0].archives // [])[] | select((.name // "") | endswith(".checkpoint") | not) ]
+          | (.[-1] // {})
+          | [ (.name // ""), (.start // ""),
+              (.stats.original_size // 0), (.stats.nfiles // 0) ] | @tsv' <<<"$info" 2>/dev/null) || true
     fi
 
     # Named and flagged rather than dropped. A repository that vanishes from the

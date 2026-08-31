@@ -50,13 +50,21 @@ Panel {
     // defaults to 8.5, which made these two sit tighter to their neighbours
     // than everything else on the bar.
     horizontalMargin: 14
+    // Deliberately the same figures the panel shows. These were computed two
+    // different ways and disagreed: the bar carried an estimate against what
+    // changed since the last archive while the panel measured the whole job, so
+    // the bar could read 100% beside a panel reading 4%.
     text: {
       if (!root.showAge || !root.borg || !root.borg.known) return root.glyph
       if (root.borg.running) {
-        var p = root.borg.progressLabel()
-        return p === "" ? root.glyph + " …" : root.glyph + " " + p
+        var pct = root.borg.percentOf(root.borg.activeRepo)
+        return pct >= 0 ? root.glyph + " " + pct + "%" : root.glyph + " …"
       }
-      var a = root.borg.relative(root.borg.ageSeconds)
+      // Age of the most recent successful backup, not of the last run. A run
+      // that failed still leaves a good backup behind it.
+      var newest = root.borg.newestBackup
+      var a = newest > 0 ? root.borg.relative((Date.now() / 1000) - newest)
+                         : root.borg.relative(root.borg.ageSeconds)
       return a === "" ? root.glyph : root.glyph + " " + a
     }
     tooltipText: root.headline

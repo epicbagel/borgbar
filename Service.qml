@@ -183,27 +183,6 @@ Item {
     return (i === 0 ? Math.round(b) : b.toFixed(1)) + units[i]
   }
 
-  // The tilde is doing real work: this is a guess against a cached denominator,
-  // and it should never read as though borg reported it.
-  function progressLabel() {
-    var p = progress || ({})
-    if (p.percent === null || p.percent === undefined) return ""
-    return "~" + p.percent + "%"
-  }
-
-  // A quantity on its own tells you nothing — "154GB added" could be a job
-  // nearly finished or barely begun. The source total is what makes it read as
-  // progress, so it is always shown when known, even though it comes from the
-  // last Check repos rather than this instant.
-  function progressDetail() {
-    var p = progress || ({})
-    if (!p.addedBytes) return ""
-    var added = humanBytes(p.addedBytes) + " added"
-    if (p.sourceBytes)
-      return added + " of " + humanBytes(p.sourceBytes) + " to back up"
-    return added + " · run Check repos to see the total"
-  }
-
   function clockOf(epoch) {
     if (!epoch) return ""
     return new Date(epoch * 1000).toLocaleString(Qt.locale(), "ddd d MMM HH:mm")

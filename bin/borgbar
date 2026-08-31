@@ -146,7 +146,7 @@ active_phase() {
 # the numerator counts files added across the whole run and will pass 100% on
 # the second repository. Capped, and still labelled an estimate.
 progress_json() {
-  local start added_bytes added_files source_bytes archive_bytes delta
+  local start added_bytes added_files source_bytes
   start=$(sc show "$UNIT.service" -p ExecMainStartTimestamp --value)
   [[ -z $start ]] && { echo '{}'; return; }
 
@@ -170,23 +170,10 @@ progress_json() {
   [[ -z $added_bytes ]] && added_bytes=0
 
   source_bytes=$(jq -r '.sourceBytes // 0' "$CACHE" 2>/dev/null || echo 0)
-  archive_bytes=$(jq -r '.originalSize // 0' "$CACHE" 2>/dev/null || echo 0)
-  # Both halves or nothing. With the archive size missing this would otherwise
-  # fall back to the whole source tree and report a run that is 96% done as 3%,
-  # which is worse than declining to guess.
-  if (( source_bytes > 0 && archive_bytes > 0 && source_bytes > archive_bytes )); then
-    delta=$(( source_bytes - archive_bytes ))
-  else
-    delta=0
-  fi
 
   jq -cn --argjson added "$added_bytes" --argjson files "$added_files" \
-    --argjson delta "$delta" --argjson source "$source_bytes" \
-    '{addedBytes:$added, addedFiles:$files, deltaBytes:$delta, sourceBytes:$source,
-      estimated: true,
-      percent: (if $delta > 0
-                then ([100, (100 * $added / $delta)] | min | floor)
-                else null end)}'
+    --argjson source "$source_bytes" \
+    '{addedBytes:$added, addedFiles:$files, sourceBytes:$source}'
 }
 
 cmd_status() {

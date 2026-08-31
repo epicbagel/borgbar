@@ -221,7 +221,8 @@ cmd_refresh() {
   while IFS=$'\t' read -r label path; do
     [[ -z $label ]] && continue
 
-    info=$(timeout 120 borgmatic info --repository "$label" --last 1 --json 2>/dev/null) || true
+    local err; err=$(mktemp)
+    info=$(timeout 120 borgmatic info --repository "$label" --last 1 --json 2>"$err") || true
     name=""; start=""; osize=0; nfiles=0
     if [[ -n $info ]]; then
       IFS=$'\t' read -r name start osize nfiles < <(jq -r '(.[0] // {}) | [
@@ -235,10 +236,21 @@ cmd_refresh() {
     # Named and flagged rather than dropped. A repository that vanishes from the
     # panel looks identical to one that was never configured, which is the one
     # reading a backup owner must never be given.
+    #
+    # A held lock is not a fault, though, and must not read as one: borg takes
+    # an exclusive lock for the whole of a run, so the repository currently
+    # being written to is unreadable for exactly as long as it is being backed
+    # up. Reporting that as unreachable would put the panel at its most alarming
+    # precisely when the thing is working.
     if [[ -z $name ]]; then
-      repos=$(jq -c --arg l "$label" '. + [{label:$l, error:"could not read"}]' <<<"$repos")
+      local reason="could not read"
+      grep -qiE 'lock|exit status 73' "$err" 2>/dev/null && reason="busy"
+      repos=$(jq -c --arg l "$label" --arg r "$reason" \
+        '. + [{label:$l, error:$r, busy:($r == "busy")}]' <<<"$repos")
+      rm -f "$err"
       continue
     fi
+    rm -f "$err"
 
     # Parsed here rather than in jq: borg writes local time with no zone, and
     # jq's mktime would read it as UTC and shift every timestamp.

@@ -233,13 +233,17 @@ Panel {
               width: parent.width / 2
               horizontalAlignment: Text.AlignRight
               text: {
+                if (modelData.busy) return "backing up…"
                 if (modelData.error) return "unreachable"
                 if (!modelData.at) return "no archives"
                 return root.borg.relative((Date.now() / 1000) - modelData.at) + " ago"
               }
               // Stale here means this destination is behind the others, not that
               // the run failed — the schedule block above already reports that.
+              // Busy is the normal state of the repository a run is currently
+              // writing to, so it stays quiet. Only a real fault goes urgent.
               color: {
+                if (modelData.busy) return Color.accent
                 if (modelData.error || !modelData.at) return root.urgent
                 var age = (Date.now() / 1000) - modelData.at
                 return age > root.borg.staleHours * 3600 ? root.urgent : root.dim

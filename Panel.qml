@@ -87,7 +87,7 @@ Panel {
     Column {
       id: column
       width: parent.width
-      spacing: Style.space(12)
+      spacing: Style.space(10)
 
       Text {
         width: parent.width
@@ -153,7 +153,7 @@ Panel {
         Column {
           id: repoRow
           width: column.width
-          spacing: Style.space(5)
+          spacing: Style.space(6)
 
           readonly property bool syncing: !!root.borg && root.borg.syncingNow(modelData.label || "")
           readonly property bool queued:  !!root.borg && root.borg.queuedNow(modelData.label || "")
@@ -161,6 +161,11 @@ Panel {
           readonly property int pct: root.borg ? root.borg.percentOf(modelData.label || "") : -1
           readonly property real age:     modelData.at ? (Date.now() / 1000) - modelData.at : -1
           readonly property bool behind:  !syncing && !queued && !completed && (age < 0 || age > root.borg.staleHours * 3600)
+
+          Item {
+            width: 1
+            height: Style.space(3)
+          }
 
           Row {
             width: parent.width
@@ -247,10 +252,24 @@ Panel {
             font.pixelSize: Style.font.caption
             elide: Text.ElideRight
           }
+
+          Item {
+            width: 1
+            height: Style.space(3)
+          }
+
+          Rectangle {
+            width: parent.width
+            height: 1
+            color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+          }
         }
       }
 
-      PanelSeparator { width: parent.width }
+      PanelSeparator {
+        width: parent.width
+        visible: !root.borg || (root.borg.repos || []).length === 0
+      }
 
       Row {
         width: parent.width

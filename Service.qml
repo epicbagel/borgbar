@@ -41,6 +41,19 @@ Item {
   // process, so it tracks the run moving from one repository to the next.
   property string activeRepo: ""
   property string activePhase: ""   // syncing | checking | pruning | compacting
+  property real startedAt: 0
+
+  // Bumped every second while something is happening, purely so bindings that
+  // show elapsed time re-evaluate. Without it the panel sits perfectly still
+  // for ten seconds at a stretch during a copy that takes hours, and a still
+  // panel reads as a crashed one.
+  property int tick: 0
+  Timer {
+    interval: 1000
+    repeat: true
+    running: root.running
+    onTriggered: root.tick++
+  }
   // Always an estimate — see progress_json in bin/borgbar for why borg
   // cannot give a real one.
   property var progress: ({})
@@ -114,25 +127,46 @@ Item {
 
   // The headline. Plain words, and it leads with the bad news when there is any.
   readonly property string summary: {
-    if (!known && !running) return "No backups recorded"
-    if (scheduleOff) return "Backups are turned off"
+    tick
+    if (!known && !running) return "No backups yet"
+    if (scheduleOff) return "Backups are switched off"
     if (running) {
-      if (activePhase === "syncing" && activeRepo !== "") {
+      var where = activeRepo !== "" ? " to " + activeRepo : ""
+      if (activePhase === "syncing") {
         var p = percentOf(activeRepo)
-        return p >= 0 ? "Backing up · " + p + "%" : "Backing up now"
+        return p >= 0 ? "Copying" + where + " · " + p + "%" : "Copying" + where
       }
-      if (activePhase !== "") return activePhase.charAt(0).toUpperCase() + activePhase.slice(1) + "…"
-      return "Backing up now"
+      return plainPhase + where
     }
     if (repos && repos.length && reposBehind > 0)
-      return reposBehind === 1 ? "1 backup is out of date"
-                               : reposBehind + " backups are out of date"
+      return reposBehind === 1 ? "One copy is out of date"
+                               : reposBehind + " copies are out of date"
     if (newestBackup > 0)
       return "Backed up " + relative((Date.now() / 1000) - newestBackup) + " ago"
     return "Not checked yet"
   }
 
+
+
   readonly property bool summaryBad: scheduleOff || (!running && reposBehind > 0)
+
+  // What is happening, said the way a person would say it. borg's own verbs —
+  // create, check, prune, compact — describe operations on an archive format,
+  // not anything the owner of the files recognises.
+  readonly property string plainPhase: {
+    if (!running) return ""
+    if (activePhase === "syncing")   return "Copying"
+    if (activePhase === "checking")  return "Checking the copy"
+    if (activePhase === "pruning")   return "Clearing out old copies"
+    if (activePhase === "compacting") return "Tidying up"
+    return "Working"
+  }
+
+  readonly property string elapsed: {
+    tick  // re-evaluate every second
+    if (!running || startedAt <= 0) return ""
+    return relative((Date.now() / 1000) - startedAt)
+  }
 
   function syncingNow(label) {
     return running && label !== "" && label === activeRepo
@@ -240,6 +274,7 @@ Item {
         root.checkedAt = Number(s.checkedAt) || 0
         root.activeRepo = String(s.activeRepo || "")
         root.activePhase = String(s.activePhase || "")
+        root.startedAt = Number(s.startedAt) || 0
         root.progress = s.progress || ({})
       }
     }

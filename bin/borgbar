@@ -223,18 +223,21 @@ cmd_status() {
 
   # Not named "active": that is already the timer's own state, a few lines up,
   # and reusing it put a repository name in the Timer row.
-  local live_repo="" live_phase=""
-  if [[ $running == true ]]; then live_repo=$(active_repo); live_phase=$(active_phase); fi
+  local live_repo="" live_phase="" started=0
+  if [[ $running == true ]]; then
+    live_repo=$(active_repo); live_phase=$(active_phase)
+    started=$(date -d "$(sc show "$UNIT.service" -p ExecMainStartTimestamp --value)" +%s 2>/dev/null || echo 0)
+  fi
 
   jq -cn --argjson installed "$installed" --arg state "$state" --arg result "$result" --arg timer "$active" \
     --argjson running "$running" --argjson last "$reference" --argjson next "$next" \
     --argjson age "$age" --argjson exitcode "$exitcode" --argjson stale "$STALE_HOURS" \
     --argjson repos "$repos" --argjson checked "$checked" --argjson progress "$prog" \
-    --arg active "$live_repo" --arg phase "$live_phase" \
+    --arg active "$live_repo" --arg phase "$live_phase" --argjson started "${started:-0}" \
     '{installed:$installed, state:$state, running:$running, result:$result, exitCode:$exitcode,
       timer:$timer, lastRun:$last, nextRun:$next, ageSeconds:$age,
       staleHours:$stale, repos:$repos, checkedAt:$checked, progress:$progress,
-      activeRepo:$active, activePhase:$phase}'
+      activeRepo:$active, activePhase:$phase, startedAt:$started}'
 }
 
 # The slow one. Never called from the poll loop.

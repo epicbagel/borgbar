@@ -136,9 +136,15 @@ Panel {
         Text {
           width: parent.width / 2
           horizontalAlignment: Text.AlignRight
+          // The timer runs on OnUnitActiveSec, so systemd cannot name the next
+          // time until the current run ends. "not scheduled" was the literal
+          // reading of that and the wrong one — it says the schedule is broken
+          // when it is merely waiting, and it says it during every backup.
           text: {
-            if (!root.borg || !root.borg.nextRun) return "not scheduled"
-            return "in " + root.borg.untilNext()
+            if (!root.borg) return "unknown"
+            if (root.borg.nextRun) return "in " + root.borg.untilNext()
+            if (root.borg.running) return "after this run"
+            return root.borg.timer === "active" ? "waiting on the timer" : "not scheduled"
           }
           color: root.foreground
           font.family: root.fontFamily

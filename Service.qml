@@ -116,19 +116,20 @@ Item {
   // The headline. Plain words, and it leads with the bad news when there is any.
   readonly property string summary: {
     tick
-    if (!known && !running) return "No backups yet"
     if (scheduleOff) return "Backups are switched off"
-    if (running) {
-      var where = activeRepo !== "" ? " to " + activeRepo : ""
-      return plainPhase + where
+    if (!known && !running && newestBackup <= 0) return "No backups yet"
+    if (repos && repos.length) {
+      if (reposBehind > 0)
+        return reposBehind === 1 ? "One copy is out of date"
+                                 : reposBehind + " copies are out of date"
+      if (newestBackup > 0)
+        return "Backed up " + relative((Date.now() / 1000) - newestBackup) + " ago"
     }
-    if (repos && repos.length && reposBehind > 0)
-      return reposBehind === 1 ? "One copy is out of date"
-                               : reposBehind + " copies are out of date"
-    if (newestBackup > 0)
-      return "Backed up " + relative((Date.now() / 1000) - newestBackup) + " ago"
+    if (running) return "Backing up"
     return "Not checked yet"
   }
+
+
 
 
 
@@ -155,7 +156,7 @@ Item {
     tick
     if (!running) return ""
     var bits = []
-    if (elapsed !== "") bits.push("running for " + elapsed)
+    if (elapsed !== "") bits.push(elapsed)
     var p = progress || ({})
     if (p.addedBytes) bits.push(humanBytes(p.addedBytes) + " copied")
     return bits.join(" · ")

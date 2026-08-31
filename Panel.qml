@@ -100,16 +100,6 @@ Panel {
         elide: Text.ElideRight
       }
 
-      // One line, one place. Ticks every second so a long copy visibly lives.
-      Text {
-        width: parent.width
-        visible: !!root.borg && root.borg.liveDetail !== ""
-        text: root.borg ? root.borg.liveDetail : ""
-        color: root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-      }
-
       Text {
         width: parent.width
         wrapMode: Text.Wrap
@@ -141,40 +131,60 @@ Panel {
       Repeater {
         model: root.borg && !root.borg.refreshing ? (root.borg.repos || []) : []
 
-        Row {
+        Column {
           id: repoRow
           width: column.width
+          spacing: Style.space(1)
 
           readonly property bool syncing: !!root.borg && root.borg.syncingNow(modelData.label || "")
-          readonly property bool queued: !!root.borg && root.borg.queuedNow(modelData.label || "")
-          readonly property real age: modelData.at ? (Date.now() / 1000) - modelData.at : -1
-          readonly property bool behind: !syncing && !queued && (age < 0 || age > root.borg.staleHours * 3600)
+          readonly property bool queued:  !!root.borg && root.borg.queuedNow(modelData.label || "")
+          readonly property real age:     modelData.at ? (Date.now() / 1000) - modelData.at : -1
+          readonly property bool behind:  !syncing && !queued && (age < 0 || age > root.borg.staleHours * 3600)
 
-          Text {
-            width: parent.width * 0.42
-            text: modelData.label || ""
-            color: root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            elide: Text.ElideRight
-          }
-          Text {
-            width: parent.width * 0.58
-            horizontalAlignment: Text.AlignRight
-            // Always relative. "31 Aug 12:33" makes the reader do the sum, and
-            // the answer to how safe their files are should not need arithmetic.
-            text: {
-              if (repoRow.syncing) return "copying now"
-              if (repoRow.queued) return "waiting its turn"
-              if (repoRow.age < 0) return "never copied"
-              var ago = root.borg.relative(repoRow.age) + " ago"
-              return repoRow.behind ? ago + " · out of date" : ago
+          Row {
+            width: parent.width
+
+            Text {
+              width: parent.width * 0.42
+              text: modelData.label || ""
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              elide: Text.ElideRight
             }
-            color: repoRow.syncing ? Color.accent
-                 : repoRow.queued  ? root.dim
-                 : repoRow.behind  ? root.urgent : root.dim
+
+            Text {
+              width: parent.width * 0.58
+              horizontalAlignment: Text.AlignRight
+              // Always relative. An absolute date makes the reader do the sum,
+              // and how safe their files are should not need arithmetic.
+              text: {
+                if (repoRow.syncing) return "copying now"
+                if (repoRow.queued)  return "waiting its turn"
+                if (repoRow.age < 0) return "never copied"
+                var ago = root.borg.relative(repoRow.age) + " ago"
+                return repoRow.behind ? ago + " · out of date" : ago
+              }
+              color: repoRow.syncing ? Color.accent
+                   : repoRow.queued  ? root.dim
+                   : repoRow.behind  ? root.urgent : root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              elide: Text.ElideRight
+            }
+          }
+
+          // Detail sits under the destination it describes, not at the top of
+          // the panel away from it. Ticks every second so a long copy shows it
+          // is alive.
+          Text {
+            width: parent.width
+            horizontalAlignment: Text.AlignRight
+            visible: repoRow.syncing && text !== ""
+            text: root.borg ? root.borg.liveDetail : ""
+            color: root.dim
             font.family: root.fontFamily
-            font.pixelSize: Style.font.body
+            font.pixelSize: Style.font.caption
             elide: Text.ElideRight
           }
         }

@@ -88,6 +88,27 @@ Item {
     return mine > live && live >= 0
   }
 
+  function repoIndex(label) {
+    var list = repos || []
+    for (var i = 0; i < list.length; i++)
+      if (list[i].label === label) return i
+    return -1
+  }
+
+  // borgmatic visits repositories in configuration order. Once it has moved
+  // to a later destination, the earlier ones have completed this run.
+  function completedNow(label) {
+    var mine = repoIndex(label)
+    var live = repoIndex(activeRepo)
+    return running && mine >= 0 && live >= 0 && mine < live
+  }
+
+  readonly property int destinationsCompleted: {
+    if (!running) return 0
+    var live = repoIndex(activeRepo)
+    return live < 0 ? 0 : live
+  }
+
   // --- what a person actually opens this to find out ---------------------
   //
   // Not "did the last run exit zero" but "is my data safe". Those differ: a run
@@ -148,10 +169,8 @@ Item {
   }
 
   // What is actually known during a copy: how long it has been going and how
-  // much has been written. Not how far through it is — borg discovers the work
-  // as it walks the tree, and after the first copy it skips everything it
-  // already holds, so any percentage would read near zero on a run that is
-  // about to finish.
+  // much has been written. The panel may also show the source-relative estimate
+  // on the active destination, but the byte count here remains the exact fact.
   readonly property string liveDetail: {
     tick
     if (!running) return ""
@@ -170,6 +189,16 @@ Item {
 
   function syncingNow(label) {
     return running && label !== "" && label === activeRepo
+  }
+
+  // This is an estimate for the active destination only. Keeping it scoped to
+  // that row avoids presenting it as progress for the whole multi-repository
+  // run.
+  function percentOf(label) {
+    if (!syncingNow(label) || activePhase !== "syncing") return -1
+    var p = progress || ({})
+    if (!p.addedBytes || !p.sourceBytes) return -1
+    return Math.min(100, Math.floor(100 * p.addedBytes / p.sourceBytes))
   }
 
 

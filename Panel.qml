@@ -89,15 +89,35 @@ Panel {
       width: parent.width
       spacing: Style.space(12)
 
-      // The one line that answers the question people opened this for.
+      PanelSectionHeader {
+        visible: !!root.borg && root.borg.running
+        text: "BACKUP RUN IN PROGRESS"
+        foreground: Color.accent
+        fontFamily: root.fontFamily
+      }
+
       Text {
         width: parent.width
-        text: root.headline
+        text: {
+          if (!root.borg || !root.borg.running) return root.headline
+          var total = (root.borg.repos || []).length
+          if (total === 0 || root.borg.activeRepo === "") return "Backup in progress"
+          return root.borg.destinationsCompleted + " of " + total + " destinations completed"
+        }
         color: root.borg && root.borg.summaryBad ? root.urgent : root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.subtitle
         font.bold: true
         elide: Text.ElideRight
+      }
+
+      Text {
+        width: parent.width
+        visible: !!root.borg && root.borg.running && root.borg.elapsed !== ""
+        text: root.borg ? "Running for " + root.borg.elapsed : ""
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
       }
 
       Text {
@@ -113,7 +133,7 @@ Panel {
       PanelSeparator { width: parent.width }
 
       PanelSectionHeader {
-        text: "COPIES ARE KEPT ON"
+        text: "DESTINATIONS"
         foreground: root.foreground
         fontFamily: root.fontFamily
       }
@@ -134,18 +154,32 @@ Panel {
         Column {
           id: repoRow
           width: column.width
-          spacing: Style.space(1)
+          spacing: Style.space(5)
 
           readonly property bool syncing: !!root.borg && root.borg.syncingNow(modelData.label || "")
           readonly property bool queued:  !!root.borg && root.borg.queuedNow(modelData.label || "")
+          readonly property bool completed: !!root.borg && root.borg.completedNow(modelData.label || "")
+          readonly property int pct: root.borg ? root.borg.percentOf(modelData.label || "") : -1
           readonly property real age:     modelData.at ? (Date.now() / 1000) - modelData.at : -1
-          readonly property bool behind:  !syncing && !queued && (age < 0 || age > root.borg.staleHours * 3600)
+          readonly property bool behind:  !syncing && !queued && !completed && (age < 0 || age > root.borg.staleHours * 3600)
 
           Row {
             width: parent.width
+            spacing: Style.space(6)
 
             Text {
-              width: parent.width * 0.42
+              id: repoIcon
+              width: Style.space(16)
+              text: repoRow.syncing ? "●" : repoRow.queued ? "○" : repoRow.completed ? "✓" : repoRow.behind ? "!" : "✓"
+              color: repoRow.syncing ? Color.accent : repoRow.behind ? root.urgent : root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              horizontalAlignment: Text.AlignHCenter
+            }
+
+            Text {
+              id: repoName
+              width: parent.width * 0.38
               text: modelData.label || ""
               color: root.foreground
               font.family: root.fontFamily
@@ -154,19 +188,23 @@ Panel {
             }
 
             Text {
-              width: parent.width * 0.58
+              width: parent.width - repoIcon.width - repoName.width - Style.space(12)
               horizontalAlignment: Text.AlignRight
               // Always relative. An absolute date makes the reader do the sum,
               // and how safe their files are should not need arithmetic.
               text: {
-                if (repoRow.syncing) return "copying now"
+                if (repoRow.syncing)
+                  return repoRow.pct >= 0 ? "copying · " + repoRow.pct + "%"
+                                          : root.borg.plainPhase.toLowerCase()
                 if (repoRow.queued)  return "waiting its turn"
+                if (repoRow.completed) return "completed this run"
                 if (repoRow.age < 0) return "never copied"
                 var ago = root.borg.relative(repoRow.age) + " ago"
                 return repoRow.behind ? ago + " · out of date" : ago
               }
               color: repoRow.syncing ? Color.accent
                    : repoRow.queued  ? root.dim
+                   : repoRow.completed ? root.dim
                    : repoRow.behind  ? root.urgent : root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
@@ -174,14 +212,37 @@ Panel {
             }
           }
 
-          // Detail sits under the destination it describes, not at the top of
-          // the panel away from it. Ticks every second so a long copy shows it
-          // is alive.
+          Item {
+            width: parent.width - Style.space(22)
+            height: Style.space(6)
+            x: Style.space(22)
+            visible: repoRow.syncing && repoRow.pct >= 0
+
+            Rectangle {
+              anchors.fill: parent
+              radius: height / 2
+              color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.15)
+            }
+            Rectangle {
+              height: parent.height
+              radius: height / 2
+              color: Color.accent
+              width: parent.width * Math.max(0, Math.min(100, repoRow.pct)) / 100
+              Behavior on width { NumberAnimation { duration: 400 } }
+            }
+          }
+
           Text {
-            width: parent.width
-            horizontalAlignment: Text.AlignRight
+            width: parent.width - Style.space(22)
+            x: Style.space(22)
             visible: repoRow.syncing && text !== ""
-            text: root.borg ? root.borg.liveDetail : ""
+            text: {
+              if (!root.borg) return ""
+              var p = root.borg.progress || ({})
+              if (p.addedBytes && p.sourceBytes)
+                return root.borg.humanBytes(p.addedBytes) + " of " + root.borg.humanBytes(p.sourceBytes) + " copied · estimate"
+              return root.borg.liveDetail
+            }
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
@@ -190,12 +251,42 @@ Panel {
         }
       }
 
+      PanelSeparator { width: parent.width }
+
+      Row {
+        width: parent.width
+
+        Text {
+          width: parent.width * 0.55
+          text: "Next automatic backup"
+          color: root.dim
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
+        Text {
+          width: parent.width * 0.45
+          horizontalAlignment: Text.AlignRight
+          text: {
+            if (!root.borg) return "Unknown"
+            if (root.borg.scheduleOff) return "Switched off"
+            if (root.borg.running) return "After this run"
+            var next = root.borg.untilNext()
+            return next === "" ? "Unknown" : "In " + next
+          }
+          color: root.borg && root.borg.scheduleOff ? root.urgent : root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          elide: Text.ElideRight
+        }
+      }
+
       Row {
         width: parent.width
         spacing: Style.space(6)
 
         Button {
-          text: root.borg && root.borg.running ? "Running…" : "Back up now"
+          visible: !root.borg || !root.borg.running
+          text: "Back up now"
           bordered: true
           enabled: !!root.borg && !root.borg.running
           foreground: root.foreground
@@ -204,7 +295,7 @@ Panel {
           onClicked: if (root.borg) root.borg.backUpNow()
         }
         Button {
-          text: "Check"
+          text: "Check copies"
           bordered: true
           enabled: !!root.borg && !root.borg.refreshing
           foreground: root.foreground

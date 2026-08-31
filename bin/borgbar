@@ -150,9 +150,22 @@ progress_json() {
   start=$(sc show "$UNIT.service" -p ExecMainStartTimestamp --value)
   [[ -z $start ]] && { echo '{}'; return; }
 
-  added_files=$(journalctl $SC -u "$UNIT.service" --since "$start" --no-pager -o cat | grep -c "^A ")
-  added_bytes=$(journalctl $SC -u "$UNIT.service" --since "$start" --no-pager -o cat |
-    sed -n 's/^A //p' | tr '\n' '\0' |
+  # Counted from where the current repository's copy began, not from the top of
+  # the run. borgmatic writes the same source to each repository in turn and
+  # logs every file each time, so a running total is already complete before the
+  # second repository has copied a single byte — it would show 100% instantly
+  # and stay there.
+  local log repo_now
+  repo_now=$(active_repo)
+  log=$(journalctl $SC -u "$UNIT.service" --since "$start" --no-pager -o cat)
+  if [[ -n $repo_now ]]; then
+    local from
+    from=$(grep -n "^${repo_now}: Creating archive" <<<"$log" | tail -1 | cut -d: -f1)
+    [[ -n $from ]] && log=$(tail -n "+$from" <<<"$log")
+  fi
+
+  added_files=$(grep -c "^A " <<<"$log")
+  added_bytes=$(sed -n 's/^A //p' <<<"$log" | tr '\n' '\0' |
     du -cb --files0-from=- 2>/dev/null | tail -1 | cut -f1)
   [[ -z $added_bytes ]] && added_bytes=0
 

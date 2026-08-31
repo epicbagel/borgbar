@@ -87,6 +87,53 @@ Item {
     return mine > live && live >= 0
   }
 
+  // --- what a person actually opens this to find out ---------------------
+  //
+  // Not "did the last run exit zero" but "is my data safe". Those differ: a run
+  // can exit cleanly having written one destination and skipped another, and a
+  // run can fail at the end having already copied everything.
+
+  readonly property int reposBehind: {
+    var n = 0, list = repos || [], now = Date.now() / 1000
+    for (var i = 0; i < list.length; i++) {
+      var r = list[i]
+      if (r.busy) continue
+      if (r.error || !r.at || (now - r.at) > staleHours * 3600) n++
+    }
+    return n
+  }
+
+  readonly property real newestBackup: {
+    var best = 0, list = repos || []
+    for (var i = 0; i < list.length; i++)
+      if (list[i].at && list[i].at > best) best = list[i].at
+    return best
+  }
+
+  readonly property bool scheduleOff: timer !== "" && timer !== "active"
+
+  // The headline. Plain words, and it leads with the bad news when there is any.
+  readonly property string summary: {
+    if (!known && !running) return "No backups recorded"
+    if (scheduleOff) return "Backups are turned off"
+    if (running) {
+      if (activePhase === "syncing" && activeRepo !== "") {
+        var p = percentOf(activeRepo)
+        return p >= 0 ? "Backing up · " + p + "%" : "Backing up now"
+      }
+      if (activePhase !== "") return activePhase.charAt(0).toUpperCase() + activePhase.slice(1) + "…"
+      return "Backing up now"
+    }
+    if (repos && repos.length && reposBehind > 0)
+      return reposBehind === 1 ? "1 backup is out of date"
+                               : reposBehind + " backups are out of date"
+    if (newestBackup > 0)
+      return "Backed up " + relative((Date.now() / 1000) - newestBackup) + " ago"
+    return "Not checked yet"
+  }
+
+  readonly property bool summaryBad: scheduleOff || (!running && reposBehind > 0)
+
   function syncingNow(label) {
     return running && label !== "" && label === activeRepo
   }
@@ -178,6 +225,21 @@ Item {
   }
 
   Timer { id: settle; interval: 700; onTriggered: root.refresh() }
+
+  // A run finishing, or moving to the next repository, is exactly when the
+  // cached view of the repositories became wrong — and the only moment worth
+  // spending a network call on without being asked. Without this the panel goes
+  // on calling a repository "never backed up" straight after backing it up.
+  property bool wasRunning: false
+  property string wasActive: ""
+  onRunningChanged: {
+    if (wasRunning && !running) refreshArchives()
+    wasRunning = running
+  }
+  onActiveRepoChanged: {
+    if (running && wasActive !== "" && activeRepo !== wasActive) refreshArchives()
+    wasActive = activeRepo
+  }
 
   Process {
     id: statusProc

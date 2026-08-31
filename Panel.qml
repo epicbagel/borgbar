@@ -33,17 +33,9 @@ Panel {
     return barForeground
   }
 
-  readonly property string headline: {
-    if (!borg) return "No backup service"
-    if (borg.running) {
-      var p = borg.progressLabel()
-      return p === "" ? "Backing up now" : "Backing up now · " + p + " (est.)"
-    }
-    if (borg.failed) return "Last backup failed"
-    if (!borg.known) return "No backup recorded"
-    var age = borg.relative(borg.ageSeconds)
-    return borg.stale ? ("Last backup " + age + " ago") : ("Backed up " + age + " ago")
-  }
+  readonly property string headline: borg ? borg.summary : "No backup service"
+
+
 
   // Nothing to say on a machine without borgmatic, so take up no room.
   visible: !borg || borg.installed
@@ -92,115 +84,39 @@ Panel {
       width: parent.width
       spacing: Style.space(12)
 
+      // The one line that answers the question. Everything else is detail.
       Text {
         width: parent.width
         text: root.headline
-        color: root.borg && (root.borg.failed || root.borg.stale) ? root.urgent : root.foreground
+        color: root.borg && root.borg.summaryBad ? root.urgent : root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.subtitle
         font.bold: true
         elide: Text.ElideRight
       }
 
+      // Shown only when it is bad news. A working schedule needs no announcing.
       Text {
         width: parent.width
-        visible: !!root.borg && root.borg.lastRun > 0
-        text: root.borg ? root.borg.clockOf(root.borg.lastRun) : ""
-        color: root.dim
+        wrapMode: Text.Wrap
+        visible: !!root.borg && root.borg.scheduleOff
+        text: "Nothing will run until the timer is started again."
+        color: root.urgent
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
       }
 
       Text {
         width: parent.width
-        // Only when no repository row is showing it. Otherwise the same figures
-        // appear twice, in two places, describing one thing.
-        visible: !!root.borg && root.borg.running && root.borg.progressDetail() !== ""
-                 && root.borg.reposBusy === 0
-        text: root.borg ? root.borg.progressDetail() : ""
+        visible: !!root.borg && !root.borg.running && root.borg.newestBackup > 0
+        text: root.borg ? root.borg.clockOf(root.borg.newestBackup) : ""
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
-        wrapMode: Text.WordWrap
       }
 
       PanelSeparator { width: parent.width }
 
-      // --- schedule ---------------------------------------------------------
-      Row {
-        width: parent.width
-        Text {
-          width: parent.width / 2
-          text: "Next run"
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-        }
-        Text {
-          width: parent.width / 2
-          horizontalAlignment: Text.AlignRight
-          // The timer runs on OnUnitActiveSec, so systemd cannot name the next
-          // time until the current run ends. "not scheduled" was the literal
-          // reading of that and the wrong one — it says the schedule is broken
-          // when it is merely waiting, and it says it during every backup.
-          text: {
-            if (!root.borg) return "unknown"
-            if (root.borg.nextRun) return "in " + root.borg.untilNext()
-            if (root.borg.running) return "after this run"
-            return root.borg.timer === "active" ? "waiting on the timer" : "not scheduled"
-          }
-          color: root.foreground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-        }
-      }
-
-      Row {
-        width: parent.width
-        Text {
-          width: parent.width / 2
-          text: "Timer"
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-        }
-        Text {
-          width: parent.width / 2
-          horizontalAlignment: Text.AlignRight
-          text: root.borg ? root.borg.timer : ""
-          color: root.borg && root.borg.timer === "active" ? root.foreground : root.urgent
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-        }
-      }
-
-      Row {
-        width: parent.width
-        visible: !!root.borg && root.borg.result !== "" && root.borg.result !== "unknown"
-        Text {
-          width: parent.width / 2
-          text: "Last result"
-          color: root.dim
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-        }
-        Text {
-          width: parent.width / 2
-          horizontalAlignment: Text.AlignRight
-          text: root.borg ? root.borg.result : ""
-          color: root.borg && root.borg.result === "success" ? root.foreground : root.urgent
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-        }
-      }
-
-      PanelSeparator { width: parent.width }
-
-      // --- the repositories -------------------------------------------------
-      // One row per configured destination. borgmatic writes the same source to
-      // each in turn, so they drift apart whenever one is slower or failing —
-      // which is precisely the thing worth seeing, and precisely what a single
-      // "latest archive" line used to hide.
       PanelSectionHeader {
         text: "EACH RUN COPIES TO"
         foreground: root.foreground
@@ -213,8 +129,8 @@ Panel {
         visible: !root.borg || root.borg.refreshing || (root.borg.repos || []).length === 0
         text: {
           if (!root.borg) return ""
-          if (root.borg.refreshing) return "Reading the repositories…"
-          return "Not checked yet. Reading them goes over the network, so it is only done on request."
+          if (root.borg.refreshing) return "Checking…"
+          return "Not checked yet — press Check below."
         }
         color: root.dim
         font.family: root.fontFamily
@@ -222,7 +138,7 @@ Panel {
       }
 
       Repeater {
-        model: root.borg ? (root.borg.repos || []) : []
+        model: root.borg && !root.borg.refreshing ? (root.borg.repos || []) : []
 
         Column {
           id: repoRow
@@ -232,6 +148,8 @@ Panel {
           readonly property bool syncing: !!root.borg && root.borg.syncingNow(modelData.label || "")
           readonly property bool queued: !!root.borg && root.borg.queuedNow(modelData.label || "")
           readonly property int pct: root.borg ? root.borg.percentOf(modelData.label || "") : -1
+          readonly property real age: modelData.at ? (Date.now() / 1000) - modelData.at : -1
+          readonly property bool behind: !syncing && !queued && (age < 0 || age > root.borg.staleHours * 3600)
 
           Row {
             width: parent.width
@@ -250,21 +168,14 @@ Panel {
                 if (repoRow.syncing)
                   return repoRow.pct >= 0 ? repoRow.pct + "%"
                        : (root.borg.activePhase || "working") + "…"
-                if (repoRow.queued) return "queued next"
-                if (modelData.error && !modelData.busy) return "unreachable"
-                if (!modelData.at) return "never synced"
-                return "last synced " + root.borg.relative((Date.now() / 1000) - modelData.at) + " ago"
+                if (repoRow.queued) return "waiting its turn"
+                if (repoRow.age < 0) return "never backed up"
+                var ago = root.borg.relative(repoRow.age)
+                return repoRow.behind ? ago + " behind" : ago + " ago"
               }
-              // Syncing is the healthy state and stays quiet. Only a repository
-              // that has fallen behind or gone missing goes urgent.
-              color: {
-                if (repoRow.syncing) return Color.accent
-                if (repoRow.queued) return root.dim
-                if (modelData.error && !modelData.busy) return root.urgent
-                if (!modelData.at) return root.urgent
-                var age = (Date.now() / 1000) - modelData.at
-                return age > root.borg.staleHours * 3600 ? root.urgent : root.dim
-              }
+              color: repoRow.syncing ? Color.accent
+                   : repoRow.queued  ? root.dim
+                   : repoRow.behind  ? root.urgent : root.dim
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
             }
@@ -273,20 +184,18 @@ Panel {
           Text {
             width: parent.width
             horizontalAlignment: Text.AlignRight
-            visible: repoRow.syncing || !!modelData.name
+            visible: text !== ""
             text: {
-              if (repoRow.syncing) {
+              if (repoRow.syncing && repoRow.pct >= 0) {
                 var p = root.borg.progress || ({})
-                if (repoRow.pct >= 0 && p.addedBytes && p.sourceBytes)
-                  return root.borg.humanBytes(p.addedBytes) + " of " + root.borg.humanBytes(p.sourceBytes) + " synced"
-                return modelData.name || ""
+                if (p.addedBytes && p.sourceBytes)
+                  return root.borg.humanBytes(p.addedBytes) + " of " + root.borg.humanBytes(p.sourceBytes)
               }
-              return modelData.name || ""
+              return ""
             }
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
-            elide: Text.ElideRight
           }
         }
       }
@@ -305,7 +214,7 @@ Panel {
           onClicked: if (root.borg) root.borg.backUpNow()
         }
         Button {
-          text: "Check repos"
+          text: "Check"
           bordered: true
           enabled: !!root.borg && !root.borg.refreshing
           foreground: root.foreground

@@ -12,8 +12,8 @@ set -uo pipefail
 # systemd knows when the timer last fired, when it fires next, and how the last
 # run ended. That is local and instant, so it is polled.
 #
-# Asking the repository what archives exist goes over ssh and takes seconds, so
-# it is never polled: it is cached, and only refreshed on demand.
+# Asking the repositories what archives exist goes over ssh and takes seconds,
+# so it is never polled: it is cached, and only refreshed on demand.
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/borgbar"
 CONFIG_FILE="$CONFIG_DIR/config"
@@ -66,6 +66,35 @@ is_running() {
   pgrep -x borgmatic >/dev/null 2>&1
 }
 
+# Every repository borgmatic is configured to write to, as "label<TAB>path".
+#
+# Labels are optional in borgmatic and the list form has two shapes - a bare
+# path, or a mapping with path and label - so both are handled. Falling back to
+# the path matters: the panel needs something to call each repository, and
+# "repository 2" tells nobody which one went quiet.
+configured_repos() {
+  awk '
+    /^repositories:/ { inrepo = 1; next }
+    /^[^[:space:]#-]/ { if (inrepo) { emit(); inrepo = 0 } }
+    !inrepo { next }
+    /^[[:space:]]*-/ {
+      emit()
+      line = $0
+      sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+      if (line ~ /^path:/) { sub(/^path:[[:space:]]*/, "", line); gsub(/["'\'']/, "", line); path = line }
+      else if (line != "")  { gsub(/["'\'']/, "", line); path = line }
+      next
+    }
+    /^[[:space:]]*path:/  { line = $0; sub(/^[[:space:]]*path:[[:space:]]*/, "", line);  gsub(/["'\'']/, "", line); path  = line; next }
+    /^[[:space:]]*label:/ { line = $0; sub(/^[[:space:]]*label:[[:space:]]*/, "", line); gsub(/["'\'']/, "", line); label = line; next }
+    END { emit() }
+    function emit() {
+      if (path != "") printf "%s\t%s\n", (label != "" ? label : path), path
+      label = ""; path = ""
+    }
+  ' "$CONFIG_YAML" 2>/dev/null
+}
+
 # How far through the current run borg is — an estimate, and labelled as one
 # everywhere it surfaces.
 #
@@ -78,6 +107,10 @@ is_running() {
 # one walks the tree and the other goes over the network. Without them there is
 # no percentage, and the caller gets the byte count on its own rather than a
 # number dressed up as certainty.
+#
+# With several repositories the run writes the same source to each in turn, so
+# the numerator counts files added across the whole run and will pass 100% on
+# the second repository. Capped, and still labelled an estimate.
 progress_json() {
   local start added_bytes added_files source_bytes archive_bytes delta
   start=$(sc show "$UNIT.service" -p ExecMainStartTimestamp --value)
@@ -138,8 +171,15 @@ cmd_status() {
   elif (( reference > 0 )); then state=ok
   else state=unknown; fi
 
-  local arch='{}'
-  [[ -f $CACHE ]] && arch=$(cat "$CACHE" 2>/dev/null || echo '{}')
+  # The overall state stays systemd's, deliberately. A run that could not write
+  # one of its repositories did not do what it was asked, and softening that to
+  # "fine, one of them worked" is how a half-broken backup goes unnoticed for
+  # months. Which repository is behind is in `repos`, so the panel can say so.
+  local repos='[]' checked=0
+  if [[ -f $CACHE ]]; then
+    repos=$(jq -c '.repos // []' "$CACHE" 2>/dev/null || echo '[]')
+    checked=$(jq -r '.checkedAt // 0' "$CACHE" 2>/dev/null || echo 0)
+  fi
 
   local prog='{}'
   [[ $running == true ]] && prog=$(progress_json)
@@ -150,10 +190,10 @@ cmd_status() {
   jq -cn --argjson installed "$installed" --arg state "$state" --arg result "$result" --arg timer "$active" \
     --argjson running "$running" --argjson last "$reference" --argjson next "$next" \
     --argjson age "$age" --argjson exitcode "$exitcode" --argjson stale "$STALE_HOURS" \
-    --argjson archive "$arch" --argjson progress "$prog" \
+    --argjson repos "$repos" --argjson checked "$checked" --argjson progress "$prog" \
     '{installed:$installed, state:$state, running:$running, result:$result, exitCode:$exitcode,
       timer:$timer, lastRun:$last, nextRun:$next, ageSeconds:$age,
-      staleHours:$stale, archive:$archive, progress:$progress}'
+      staleHours:$stale, repos:$repos, checkedAt:$checked, progress:$progress}'
 }
 
 # The slow one. Never called from the poll loop.
@@ -164,41 +204,62 @@ cmd_status() {
 # second goes over the network, and neither belongs on a ten-second timer.
 cmd_refresh() {
   have borgmatic || die "borgmatic is not installed"
-  local out name at repo original=0 nfiles=0 source=0
 
-  out=$(timeout 120 borgmatic list --last 1 2>/dev/null) || true
-  repo=$(sed -n 's/^\([A-Za-z0-9._-]*\): Listing archives.*/\1/p' <<<"$out" | head -1)
-  name=$(grep -oE '^[A-Za-z0-9._-]+-[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+' <<<"$out" | tail -1)
-
-  # Sizes are best-effort: a run in progress holds the repository lock, and a
-  # missing size costs a percentage, not the widget.
-  local info
-  info=$(timeout 120 borgmatic info --last 1 --json 2>/dev/null) || true
-  if [[ -n $info ]]; then
-    original=$(jq -r '(.[0].archives[0].stats.original_size // 0)' <<<"$info" 2>/dev/null || echo 0)
-    nfiles=$(jq -r '(.[0].archives[0].stats.nfiles // 0)' <<<"$info" 2>/dev/null || echo 0)
-  fi
-  [[ -z $original || $original == null ]] && original=0
-  [[ -z $nfiles || $nfiles == null ]] && nfiles=0
-
-  # Apparent bytes, the same unit borg reports original_size in, and with the
-  # config's own excludes applied. An excluded directory can easily be larger
-  # than everything being backed up, so skipping this step can put the
-  # denominator out by a wide margin.
+  local source checked repos='[]'
   source=$(source_bytes)
+  checked=$(date +%s)
 
-  if [[ -n $name ]]; then
-    at=$(date -d "$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}' <<<"$name" | head -1)" +%s 2>/dev/null || echo 0)
-    jq -cn --arg name "$name" --arg repo "${repo:-}" --argjson at "${at:-0}" \
-      --argjson original "$original" --argjson nfiles "$nfiles" \
-      --argjson source "$source" --argjson checked "$(date +%s)" \
-      '{name:$name, repo:$repo, at:$at, originalSize:$original, nfiles:$nfiles,
-        sourceBytes:$source, checkedAt:$checked}' >"$CACHE"
-    cat "$CACHE"
-  else
-    jq -cn --argjson source "$source" --argjson checked "$(date +%s)" \
-      '{error:"could not read the repository", sourceBytes:$source, checkedAt:$checked}' | tee "$CACHE"
-  fi
+  # Asked one repository at a time, deliberately.
+  #
+  # borgmatic will report on all of them in a single call, but that call fails
+  # as a whole the moment any one of them is unreachable or lock-held: a backup
+  # running against the local box blanks out the offsite repository's status
+  # too, and the panel shows nothing known about either. One connection each
+  # costs a few seconds on a command that only ever runs on request, and keeps
+  # a failure contained to the repository it belongs to.
+  local label path info name start osize nfiles at
+  while IFS=$'\t' read -r label path; do
+    [[ -z $label ]] && continue
+
+    info=$(timeout 120 borgmatic info --repository "$label" --last 1 --json 2>/dev/null) || true
+    name=""; start=""; osize=0; nfiles=0
+    if [[ -n $info ]]; then
+      IFS=$'\t' read -r name start osize nfiles < <(jq -r '(.[0] // {}) | [
+          ((.archives[0].name) // ""),
+          ((.archives[0].start) // ""),
+          ((.archives[0].stats.original_size) // 0),
+          ((.archives[0].stats.nfiles) // 0)
+        ] | @tsv' <<<"$info" 2>/dev/null) || true
+    fi
+
+    # Named and flagged rather than dropped. A repository that vanishes from the
+    # panel looks identical to one that was never configured, which is the one
+    # reading a backup owner must never be given.
+    if [[ -z $name ]]; then
+      repos=$(jq -c --arg l "$label" '. + [{label:$l, error:"could not read"}]' <<<"$repos")
+      continue
+    fi
+
+    # Parsed here rather than in jq: borg writes local time with no zone, and
+    # jq's mktime would read it as UTC and shift every timestamp.
+    at=0
+    [[ -n $start ]] && at=$(date -d "${start%.*}" +%s 2>/dev/null || echo 0)
+
+    repos=$(jq -c --arg l "$label" --arg n "$name" --argjson at "${at:-0}" \
+      --argjson o "${osize:-0}" --argjson f "${nfiles:-0}" \
+      '. + [{label:$l, name:$n, at:$at, originalSize:$o, nfiles:$f}]' <<<"$repos")
+  done < <(configured_repos)
+
+  # The progress denominator wants "how much did a full archive hold". Every
+  # repository receives the same source tree, so the largest is the safest
+  # answer while one of them is still mid-seed and holds less than the rest.
+  local original
+  original=$(jq -r '[.[] | .originalSize // 0] | max // 0' <<<"$repos" 2>/dev/null || echo 0)
+
+  jq -cn --argjson repos "$repos" --argjson source "$source" \
+    --argjson original "${original:-0}" --argjson checked "$checked" \
+    '{repos:$repos, sourceBytes:$source, originalSize:$original, checkedAt:$checked}' >"$CACHE"
+  cat "$CACHE"
 }
 
 # Apparent size of everything borgmatic would actually read, excludes applied.
@@ -231,6 +292,12 @@ cmd_doctor() {
   printf '  timer         %s (%s)\n' "$(sc is-active "$UNIT.timer")" "$(sc is-enabled "$UNIT.timer")"
   printf '  last result   %s\n' "$(sc show "$UNIT.service" -p Result --value)"
   printf '  cache         %s\n' "$([[ -f $CACHE ]] && echo "$CACHE" || echo 'none yet - run: borgbar refresh')"
+  echo '  repositories'
+  local label path
+  while IFS=$'\t' read -r label path; do
+    [[ -z $label ]] && continue
+    printf '    %-14s %s\n' "$label" "$path"
+  done < <(configured_repos)
   echo
   cmd_status | jq .
 }

@@ -2,7 +2,8 @@
 
 Watch [Borg](https://borgbackup.org) / [borgmatic](https://torsion.org/borgmatic/)
 backups from the [Omarchy](https://omarchy.org) bar: when the last one ran,
-whether it worked, and when the next one is due.
+whether it worked, when the next one is due, and how each repository is
+keeping up.
 
 ## Why
 
@@ -16,9 +17,31 @@ Two very different costs, split deliberately:
 
 - **systemd** knows when the timer last fired, when it fires next, and how the
   last run ended. That is local and instant, so it is polled.
-- **The repository** has to be asked over the network what archives it holds,
+- **Each repository** has to be asked over the network what archives it holds,
   which takes seconds. That is never polled — it is cached and only refreshed
-  when you press *Check repo*.
+  when you press *Check repos*.
+
+## Several repositories
+
+borgmatic can write the same source to more than one destination — a box on
+the LAN and something offsite, say. Borgbar reads them from your borgmatic
+config and gives each one a row, so you can see at a glance when they have
+drifted apart:
+
+```
+beelink     14m ago
+hetzner      3d ago      <- urgent
+```
+
+They are queried one at a time rather than in a single call. borgmatic's
+combined call fails as a whole if any one repository is unreachable or
+lock-held, which would blank out a healthy destination's status just because a
+backup happened to be running against another one.
+
+The bar's own colour still comes from systemd's view of the last run. A run
+that could not write one of its repositories did not do what it was asked, and
+softening that to "fine, one of them worked" is how a half-broken backup goes
+unnoticed for months.
 
 ## Requirements
 

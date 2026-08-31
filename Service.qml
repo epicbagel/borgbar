@@ -32,7 +32,11 @@ Item {
   property real nextRun: 0
   property real ageSeconds: -1
   property int staleHours: 24
-  property var archive: ({})
+  // One entry per configured repository, newest archive each. A repository
+  // that could not be read still appears, carrying an error, so a destination
+  // going quiet looks different from never having configured it.
+  property var repos: []
+  property real checkedAt: 0
   // Always an estimate — see progress_json in bin/borgbar for why borg
   // cannot give a real one.
   property var progress: ({})
@@ -54,6 +58,16 @@ Item {
 
   // The slow one: goes to the repository. Runs as a tracked process so the
   // panel can show that it is working rather than appearing to do nothing.
+  // Worst state across the repositories, for the panel's summary line. The bar
+  // itself keeps taking its colour from systemd — see cmd_status for why.
+  readonly property int reposBehind: {
+    var n = 0
+    var list = repos || []
+    for (var i = 0; i < list.length; i++)
+      if (list[i].error || !list[i].at) n++
+    return n
+  }
+
   function refreshArchives() {
     if (!bin || refreshProc.running) return
     refreshing = true
@@ -141,7 +155,8 @@ Item {
         root.nextRun = Number(s.nextRun) || 0
         root.ageSeconds = Number(s.ageSeconds)
         root.staleHours = Number(s.staleHours) || 24
-        root.archive = s.archive || ({})
+        root.repos = s.repos || []
+        root.checkedAt = Number(s.checkedAt) || 0
         root.progress = s.progress || ({})
       }
     }
@@ -151,7 +166,11 @@ Item {
     id: refreshProc
     stdout: StdioCollector {
       onStreamFinished: {
-        try { root.archive = JSON.parse(this.text) } catch (e) { /* keep the old one */ }
+        try {
+          var c = JSON.parse(this.text)
+          root.repos = c.repos || []
+          root.checkedAt = Number(c.checkedAt) || 0
+        } catch (e) { /* keep the old one */ }
       }
     }
     onExited: { root.refreshing = false; root.refresh() }

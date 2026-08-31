@@ -187,9 +187,13 @@ Panel {
 
       PanelSeparator { width: parent.width }
 
-      // --- the repository ---------------------------------------------------
+      // --- the repositories -------------------------------------------------
+      // One row per configured destination. borgmatic writes the same source to
+      // each in turn, so they drift apart whenever one is slower or failing —
+      // which is precisely the thing worth seeing, and precisely what a single
+      // "latest archive" line used to hide.
       PanelSectionHeader {
-        text: "LATEST ARCHIVE"
+        text: "REPOSITORIES"
         foreground: root.foreground
         fontFamily: root.fontFamily
       }
@@ -197,26 +201,64 @@ Panel {
       Text {
         width: parent.width
         wrapMode: Text.Wrap
+        visible: !root.borg || root.borg.refreshing || (root.borg.repos || []).length === 0
         text: {
           if (!root.borg) return ""
-          if (root.borg.refreshing) return "Reading the repository…"
-          var a = root.borg.archive || ({})
-          if (a.error) return String(a.error)
-          if (!a.name) return "Not checked yet. Reading it goes over the network, so it is only done on request."
-          return String(a.name)
+          if (root.borg.refreshing) return "Reading the repositories…"
+          return "Not checked yet. Reading them goes over the network, so it is only done on request."
         }
-        color: root.borg && root.borg.archive && root.borg.archive.error ? root.urgent : root.dim
+        color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
       }
 
-      Text {
-        width: parent.width
-        visible: !!root.borg && !!root.borg.archive && !!root.borg.archive.repo
-        text: "repository: " + (root.borg && root.borg.archive ? root.borg.archive.repo : "")
-        color: root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
+      Repeater {
+        model: root.borg && !root.borg.refreshing ? (root.borg.repos || []) : []
+
+        Column {
+          width: column.width
+          spacing: Style.space(2)
+
+          Row {
+            width: parent.width
+            Text {
+              width: parent.width / 2
+              text: modelData.label || ""
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              elide: Text.ElideRight
+            }
+            Text {
+              width: parent.width / 2
+              horizontalAlignment: Text.AlignRight
+              text: {
+                if (modelData.error) return "unreachable"
+                if (!modelData.at) return "no archives"
+                return root.borg.relative((Date.now() / 1000) - modelData.at) + " ago"
+              }
+              // Stale here means this destination is behind the others, not that
+              // the run failed — the schedule block above already reports that.
+              color: {
+                if (modelData.error || !modelData.at) return root.urgent
+                var age = (Date.now() / 1000) - modelData.at
+                return age > root.borg.staleHours * 3600 ? root.urgent : root.dim
+              }
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+            }
+          }
+
+          Text {
+            width: parent.width
+            visible: !!modelData.name
+            text: modelData.name || ""
+            color: root.dim
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            elide: Text.ElideRight
+          }
+        }
       }
 
       Row {
@@ -233,7 +275,7 @@ Panel {
           onClicked: if (root.borg) root.borg.backUpNow()
         }
         Button {
-          text: "Check repo"
+          text: "Check repos"
           bordered: true
           enabled: !!root.borg && !root.borg.refreshing
           foreground: root.foreground

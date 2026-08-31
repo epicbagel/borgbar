@@ -40,6 +40,7 @@ Item {
   // Which repository the run is writing to right now. Comes from the running
   // process, so it tracks the run moving from one repository to the next.
   property string activeRepo: ""
+  property string activePhase: ""   // syncing | checking | pruning | compacting
   // Always an estimate — see progress_json in bin/borgbar for why borg
   // cannot give a real one.
   property var progress: ({})
@@ -94,7 +95,10 @@ Item {
   // no previous archive to measure against, and that is exactly when someone is
   // watching. Capped, because the same source goes to each repository in turn.
   function percentOf(label) {
-    if (!syncingNow(label)) return -1
+    // Only create moves bytes. A percentage during a check would be a leftover
+    // from the copy that already finished, shown against work of a different
+    // kind entirely.
+    if (!syncingNow(label) || activePhase !== "syncing") return -1
     var p = progress || ({})
     if (!p.addedBytes || !p.sourceBytes) return -1
     return Math.min(100, Math.floor(100 * p.addedBytes / p.sourceBytes))
@@ -194,6 +198,7 @@ Item {
         root.repos = s.repos || []
         root.checkedAt = Number(s.checkedAt) || 0
         root.activeRepo = String(s.activeRepo || "")
+        root.activePhase = String(s.activePhase || "")
         root.progress = s.progress || ({})
       }
     }

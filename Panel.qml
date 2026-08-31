@@ -248,7 +248,8 @@ Panel {
               horizontalAlignment: Text.AlignRight
               text: {
                 if (repoRow.syncing)
-                  return repoRow.pct >= 0 ? repoRow.pct + "%" : "syncing…"
+                  return repoRow.pct >= 0 ? repoRow.pct + "%"
+                       : (root.borg.activePhase || "working") + "…"
                 if (repoRow.queued) return "queued next"
                 if (modelData.error && !modelData.busy) return "unreachable"
                 if (!modelData.at) return "never synced"
@@ -276,9 +277,9 @@ Panel {
             text: {
               if (repoRow.syncing) {
                 var p = root.borg.progress || ({})
-                if (p.addedBytes && p.sourceBytes)
+                if (repoRow.pct >= 0 && p.addedBytes && p.sourceBytes)
                   return root.borg.humanBytes(p.addedBytes) + " of " + root.borg.humanBytes(p.sourceBytes) + " synced"
-                return ""
+                return modelData.name || ""
               }
               return modelData.name || ""
             }

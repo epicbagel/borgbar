@@ -102,16 +102,31 @@ configured_repos() {
 # run. The cache is only rewritten on demand, so a cached answer would name the
 # first repository for the whole run and keep naming it after the run moved on.
 active_repo() {
-  local cmd repo label path
+  local cmd label path
   cmd=$(pgrep -a -x borg 2>/dev/null | head -1)
   [[ -z $cmd ]] && return
-  repo=$(grep -oE '[^ ]+::' <<<"$cmd" | head -1)
-  repo=${repo%::}
-  [[ -z $repo ]] && return
+  # Matched against the configured paths rather than parsed out of the command
+  # line: a run is not only borg create. It also checks, prunes and compacts,
+  # and those take the repository without the ::archive suffix, so keying on
+  # that suffix went blank for most of a run.
   while IFS=$'\t' read -r label path; do
-    [[ $path == "$repo" ]] && { printf '%s' "$label"; return; }
+    [[ $cmd == *"$path"* ]] && { printf '%s' "$label"; return; }
   done < <(configured_repos)
-  printf '%s' "$repo"
+}
+
+# What borg is doing to it. Only create moves bytes, so the panel needs this to
+# know whether a percentage means anything or whether the run has gone on to
+# verifying what it just wrote.
+active_phase() {
+  local cmd
+  cmd=$(pgrep -a -x borg 2>/dev/null | head -1)
+  case "$cmd" in
+    *"borg create"*)  printf 'syncing' ;;
+    *"borg check"*)   printf 'checking' ;;
+    *"borg prune"*)   printf 'pruning' ;;
+    *"borg compact"*) printf 'compacting' ;;
+    *"borg "*)        printf 'working' ;;
+  esac
 }
 
 # How far through the current run borg is — an estimate, and labelled as one
@@ -208,18 +223,18 @@ cmd_status() {
 
   # Not named "active": that is already the timer's own state, a few lines up,
   # and reusing it put a repository name in the Timer row.
-  local live_repo=""
-  [[ $running == true ]] && live_repo=$(active_repo)
+  local live_repo="" live_phase=""
+  if [[ $running == true ]]; then live_repo=$(active_repo); live_phase=$(active_phase); fi
 
   jq -cn --argjson installed "$installed" --arg state "$state" --arg result "$result" --arg timer "$active" \
     --argjson running "$running" --argjson last "$reference" --argjson next "$next" \
     --argjson age "$age" --argjson exitcode "$exitcode" --argjson stale "$STALE_HOURS" \
     --argjson repos "$repos" --argjson checked "$checked" --argjson progress "$prog" \
-    --arg active "$live_repo" \
+    --arg active "$live_repo" --arg phase "$live_phase" \
     '{installed:$installed, state:$state, running:$running, result:$result, exitCode:$exitcode,
       timer:$timer, lastRun:$last, nextRun:$next, ageSeconds:$age,
       staleHours:$stale, repos:$repos, checkedAt:$checked, progress:$progress,
-      activeRepo:$active}'
+      activeRepo:$active, activePhase:$phase}'
 }
 
 # The slow one. Never called from the poll loop.

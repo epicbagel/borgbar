@@ -134,8 +134,8 @@ progress_json() {
   fi
 
   jq -cn --argjson added "$added_bytes" --argjson files "$added_files" \
-    --argjson delta "$delta" \
-    '{addedBytes:$added, addedFiles:$files, deltaBytes:$delta,
+    --argjson delta "$delta" --argjson source "$source_bytes" \
+    '{addedBytes:$added, addedFiles:$files, deltaBytes:$delta, sourceBytes:$source,
       estimated: true,
       percent: (if $delta > 0
                 then ([100, (100 * $added / $delta)] | min | floor)

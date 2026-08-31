@@ -108,13 +108,17 @@ Item {
     return "~" + p.percent + "%"
   }
 
+  // A quantity on its own tells you nothing — "154GB added" could be a job
+  // nearly finished or barely begun. The source total is what makes it read as
+  // progress, so it is always shown when known, even though it comes from the
+  // last Check repos rather than this instant.
   function progressDetail() {
     var p = progress || ({})
     if (!p.addedBytes) return ""
     var added = humanBytes(p.addedBytes) + " added"
-    if (p.percent === null || p.percent === undefined)
-      return added + " · run Check repo for an estimate"
-    return added + " of ~" + humanBytes(p.deltaBytes) + " · estimated"
+    if (p.sourceBytes)
+      return added + " of " + humanBytes(p.sourceBytes) + " to back up"
+    return added + " · run Check repos to see the total"
   }
 
   function clockOf(epoch) {

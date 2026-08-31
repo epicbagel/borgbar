@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.epicbagel.borgbar",
   "name": "Borgbar",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "author": "Jon",
   "license": "MIT",
   "description": "Watch Borg and borgmatic backups from the Omarchy bar: when the last one ran, whether it worked, when the next one is due, and how each repository is keeping up.",

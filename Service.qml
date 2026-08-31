@@ -120,10 +120,6 @@ Item {
     if (scheduleOff) return "Backups are switched off"
     if (running) {
       var where = activeRepo !== "" ? " to " + activeRepo : ""
-      if (activePhase === "syncing") {
-        var p = percentOf(activeRepo)
-        return p >= 0 ? "Copying" + where + " · " + p + "%" : "Copying" + where
-      }
       return plainPhase + where
     }
     if (repos && repos.length && reposBehind > 0)
@@ -150,6 +146,21 @@ Item {
     return "Working"
   }
 
+  // What is actually known during a copy: how long it has been going and how
+  // much has been written. Not how far through it is — borg discovers the work
+  // as it walks the tree, and after the first copy it skips everything it
+  // already holds, so any percentage would read near zero on a run that is
+  // about to finish.
+  readonly property string liveDetail: {
+    tick
+    if (!running) return ""
+    var bits = []
+    if (elapsed !== "") bits.push("running for " + elapsed)
+    var p = progress || ({})
+    if (p.addedBytes) bits.push(humanBytes(p.addedBytes) + " copied")
+    return bits.join(" · ")
+  }
+
   readonly property string elapsed: {
     tick  // re-evaluate every second
     if (!running || startedAt <= 0) return ""
@@ -160,18 +171,7 @@ Item {
     return running && label !== "" && label === activeRepo
   }
 
-  // Whole-job progress, not "new since last time": during a first seed there is
-  // no previous archive to measure against, and that is exactly when someone is
-  // watching. Capped, because the same source goes to each repository in turn.
-  function percentOf(label) {
-    // Only create moves bytes. A percentage during a check would be a leftover
-    // from the copy that already finished, shown against work of a different
-    // kind entirely.
-    if (!syncingNow(label) || activePhase !== "syncing") return -1
-    var p = progress || ({})
-    if (!p.addedBytes || !p.sourceBytes) return -1
-    return Math.min(100, Math.floor(100 * p.addedBytes / p.sourceBytes))
-  }
+
 
   function refreshArchives() {
     if (!bin || refreshProc.running) return

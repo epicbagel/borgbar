@@ -56,10 +56,7 @@ Panel {
     // the bar could read 100% beside a panel reading 4%.
     text: {
       if (!root.showAge || !root.borg || !root.borg.known) return root.glyph
-      if (root.borg.running) {
-        var pct = root.borg.percentOf(root.borg.activeRepo)
-        return pct >= 0 ? root.glyph + " " + pct + "%" : root.glyph + " …"
-      }
+      if (root.borg.running) return root.glyph + " …"
       // Age of the most recent successful backup, not of the last run. A run
       // that failed still leaves a good backup behind it.
       var newest = root.borg.newestBackup
@@ -103,46 +100,11 @@ Panel {
         elide: Text.ElideRight
       }
 
-      // How long it has been going. A long copy shows no other sign of life,
-      // and something that never changes reads as something that has died.
+      // One line, one place. Ticks every second so a long copy visibly lives.
       Text {
         width: parent.width
-        visible: !!root.borg && root.borg.running && root.borg.elapsed !== ""
-        text: root.borg ? "Running for " + root.borg.elapsed : ""
-        color: root.dim
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.caption
-      }
-
-      // Visible movement, for the same reason.
-      Item {
-        width: parent.width
-        height: Style.space(6)
-        visible: !!root.borg && root.borg.running && root.borg.percentOf(root.borg.activeRepo) >= 0
-
-        Rectangle {
-          anchors.fill: parent
-          radius: height / 2
-          color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.15)
-        }
-        Rectangle {
-          height: parent.height
-          radius: height / 2
-          color: Color.accent
-          width: parent.width * Math.max(0, Math.min(100, root.borg ? root.borg.percentOf(root.borg.activeRepo) : 0)) / 100
-          Behavior on width { NumberAnimation { duration: 400 } }
-        }
-      }
-
-      Text {
-        width: parent.width
-        visible: !!root.borg && root.borg.running && text !== ""
-        text: {
-          if (!root.borg) return ""
-          var pr = root.borg.progress || ({})
-          if (!pr.addedBytes || !pr.sourceBytes) return ""
-          return root.borg.humanBytes(pr.addedBytes) + " of " + root.borg.humanBytes(pr.sourceBytes) + " copied"
-        }
+        visible: !!root.borg && root.borg.liveDetail !== ""
+        text: root.borg ? root.borg.liveDetail : ""
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
@@ -185,7 +147,6 @@ Panel {
 
           readonly property bool syncing: !!root.borg && root.borg.syncingNow(modelData.label || "")
           readonly property bool queued: !!root.borg && root.borg.queuedNow(modelData.label || "")
-          readonly property int pct: root.borg ? root.borg.percentOf(modelData.label || "") : -1
           readonly property real age: modelData.at ? (Date.now() / 1000) - modelData.at : -1
           readonly property bool behind: !syncing && !queued && (age < 0 || age > root.borg.staleHours * 3600)
 
@@ -203,8 +164,7 @@ Panel {
             // Always relative. "31 Aug 12:33" makes the reader do the sum, and
             // the answer to how safe their files are should not need arithmetic.
             text: {
-              if (repoRow.syncing)
-                return repoRow.pct >= 0 ? "copying · " + repoRow.pct + "%" : "copying…"
+              if (repoRow.syncing) return "copying now"
               if (repoRow.queued) return "waiting its turn"
               if (repoRow.age < 0) return "never copied"
               var ago = root.borg.relative(repoRow.age) + " ago"

@@ -89,22 +89,15 @@ Panel {
       width: parent.width
       spacing: Style.space(12)
 
-      PanelSectionHeader {
-        visible: !!root.borg && root.borg.running
-        text: "BACKUP RUN IN PROGRESS"
-        foreground: Color.accent
-        fontFamily: root.fontFamily
-      }
-
       Text {
         width: parent.width
         text: {
           if (!root.borg || !root.borg.running) return root.headline
-          var total = (root.borg.repos || []).length
-          if (total === 0 || root.borg.activeRepo === "") return "Backup in progress"
-          return root.borg.destinationsCompleted + " of " + total + " destinations completed"
+          var started = root.borg.elapsed !== "" ? " · started " + root.borg.elapsed + " ago" : ""
+          return "Backup running" + started
         }
-        color: root.borg && root.borg.summaryBad ? root.urgent : root.foreground
+        color: root.borg && root.borg.running ? Color.accent
+             : root.borg && root.borg.summaryBad ? root.urgent : root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.subtitle
         font.bold: true
@@ -113,8 +106,14 @@ Panel {
 
       Text {
         width: parent.width
-        visible: !!root.borg && root.borg.running && root.borg.elapsed !== ""
-        text: root.borg ? "Running for " + root.borg.elapsed : ""
+        visible: !!root.borg && root.borg.running
+                 && (root.borg.repos || []).length > 0
+                 && root.borg.activeRepo !== ""
+        text: {
+          if (!root.borg) return ""
+          var total = (root.borg.repos || []).length
+          return root.borg.destinationsCompleted + " of " + total + " destinations completed"
+        }
         color: root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption

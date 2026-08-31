@@ -68,6 +68,13 @@ Item {
     return n
   }
 
+  readonly property int reposBusy: {
+    var n = 0
+    var list = repos || []
+    for (var i = 0; i < list.length; i++) if (list[i].busy) n++
+    return n
+  }
+
   function refreshArchives() {
     if (!bin || refreshProc.running) return
     refreshing = true

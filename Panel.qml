@@ -113,7 +113,10 @@ Panel {
 
       Text {
         width: parent.width
+        // Only when no repository row is showing it. Otherwise the same figures
+        // appear twice, in two places, describing one thing.
         visible: !!root.borg && root.borg.running && root.borg.progressDetail() !== ""
+                 && root.borg.reposBusy === 0
         text: root.borg ? root.borg.progressDetail() : ""
         color: root.dim
         font.family: root.fontFamily
@@ -239,7 +242,12 @@ Panel {
               width: parent.width / 2
               horizontalAlignment: Text.AlignRight
               text: {
-                if (modelData.busy) return "backing up…"
+                if (modelData.busy) {
+                  var p = root.borg.progress || ({})
+                  if (p.addedBytes && p.sourceBytes)
+                    return root.borg.humanBytes(p.addedBytes) + " / " + root.borg.humanBytes(p.sourceBytes)
+                  return "backing up…"
+                }
                 if (modelData.error) return "unreachable"
                 if (!modelData.at) return "no archives"
                 return root.borg.relative((Date.now() / 1000) - modelData.at) + " ago"

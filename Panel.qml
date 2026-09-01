@@ -96,8 +96,7 @@ Panel {
           var started = root.borg.elapsed !== "" ? " · started " + root.borg.elapsed + " ago" : ""
           return "Backup running" + started
         }
-        color: root.borg && root.borg.running ? Color.accent
-             : root.borg && root.borg.summaryBad ? root.urgent : root.foreground
+        color: root.borg && root.borg.summaryBad ? root.urgent : root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.subtitle
         font.bold: true
